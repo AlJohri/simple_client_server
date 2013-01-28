@@ -27,8 +27,8 @@ int main(int argc, char * argv[]) {
 
     /*parse args */
     if (argc != 5) {
-	fprintf(stderr, "usage: http_client k|u server port path\n");
-	exit(-1);
+	    fprintf(stderr, "usage: http_client k|u server port path\n");
+	    exit(-1);
     }
 
     server_name = argv[2];
@@ -50,37 +50,41 @@ int main(int argc, char * argv[]) {
     /* create socket */
 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-	perror("socket");
-	exit(-1);
+      perror("socket");
+	    exit(-1);
     }
 
     // Do DNS lookup
-    /* Hint: use gethostbyname() */
 
     site = gethostbyname(server_name);
+    // add server handling (if site ==null)
 
     /* set address */
 
     sa.sin_family = AF_INET;
     bcopy((char*) site->h_addr, (char*) &sa.sin_addr.s_addr, site->h_length);
+    //sa.sin_addr.s_addr = * (unsigned long *) site->h_addr
     sa.sin_port = htons(server_port);
     
     //getaddrinfo(site->h_addr, server_port, NULL, &sa);
 
     /* connect socket */
    
-    if (connect(sock, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
-	perror("connect");
-	exit(-1);
+    if (minet_connect(sock, (struct sockaddr_in *) &sa) !=0 ) {
+      perror("could not connect!");
+      minet_close(sock);
+      exit(-1);
     }
 
     /* send request */
 
+
     req = (char *) malloc(15 + strlen(server_path));
     sprintf(req, "GET %s HTTP/1.0\n\n", server_path);
-    if (send(sock, req, strlen(req), 0) < 0) {
-	perror("send");
-	exit(-1);
+    if (minet_write(sock, req, strlen(req)) < 0) {
+	    perror("could not send!");
+      minet_close(sock);
+	    exit(-1);
     }
 
     /* wait till socket can be read */
@@ -88,10 +92,15 @@ int main(int argc, char * argv[]) {
     
     FD_ZERO(&set);
     FD_SET(sock, &set);
+    if(FD_ISSET(sock, &set) == 0) {
+      perror("could not add sock to set!");
+      minet_close(sock);
+      exit(-1);
+    }
 
-    if (minet_select(sock + 1, &set, NULL, NULL, NULL) < 0) {
-	perror("select");
-	exit(-1);
+    if (minet_select(sock + 1, &set, 0, 0, 0) < 0) { //&timeout
+    	perror("select");
+    	exit(-1);
     }
 
     /* first read loop -- read headers */
@@ -101,9 +110,9 @@ int main(int argc, char * argv[]) {
     //remove the '\0'
     // Normal reply has return code 200
     
-    if (recv(sock, buf, BUFSIZE, 0) < 0) {
-	perror("recv");
-	exit(-1);
+    if (minet_read(sock, buf, BUFSIZE) < 0) {
+	    perror("recv");
+	    exit(-1);
     }
     sscanf(buf, "%*s %d", &rc);
 
@@ -113,26 +122,38 @@ int main(int argc, char * argv[]) {
     /* second read loop -- print out the rest of the response */
     
     /*close socket and deinitialize */
+    fprintf(wheretoprint, "The status was %d.\n", rc);
     char *rsp = buf;
 
     while (!(rsp[0] == '\n' && rsp[-2] == '\n'))
-	rsp++;
+	    rsp++;
 
     free(req);
 
     if (ok) {
-	fprintf(wheretoprint, "%s", rsp);
-	while ((datalen = recv(sock, buf, BUFSIZE, 0)) > 0) {
-	    buf[datalen] = '\0';
+	    fprintf(wheretoprint, "%s", rsp);
+  	  while ((datalen = minet_read(sock, buf, BUFSIZE)) > 0) {
+	      buf[datalen] = '\0';
 	    fprintf(wheretoprint, "%s", buf);
-	}
-	close(sock);
-    	sock = NULL;
+	  }
+    /*
+    else if (rc == 404) {
+      fprintf(wheretoprint, "It 404-ed");
+      fprintf(wheretoprint, "%s", rsp); 
+    }
+    else {
+      perror("Return code was not 200 or 404.");
+    }
+    */
+	  minet_close(sock);
+    minet_deinit();
+    //sock = NULL;
 	return 0;
     } else {
-	close(sock);
-    	sock = NULL;
-	return -1;
+	    minet_close(sock);
+      minet_deinit();
+    	//sock = NULL;
+	    return -1;
     }
 }
 
