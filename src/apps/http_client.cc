@@ -50,7 +50,7 @@ int main(int argc, char * argv[]) {
     /* create socket */
 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-      perror("socket");
+      minet_perror("socket");
 	    exit(-1);
     }
 
@@ -71,7 +71,7 @@ int main(int argc, char * argv[]) {
     /* connect socket */
    
     if (minet_connect(sock, (struct sockaddr_in *) &sa) !=0 ) {
-      perror("could not connect!");
+      minet_perror("could not connect!");
       minet_close(sock);
       exit(-1);
     }
@@ -82,7 +82,7 @@ int main(int argc, char * argv[]) {
     req = (char *) malloc(15 + strlen(server_path));
     sprintf(req, "GET %s HTTP/1.0\n\n", server_path);
     if (minet_write(sock, req, strlen(req)) < 0) {
-	    perror("could not send!");
+	    minet_perror("could not send!");
       minet_close(sock);
 	    exit(-1);
     }
@@ -93,13 +93,13 @@ int main(int argc, char * argv[]) {
     FD_ZERO(&set);
     FD_SET(sock, &set);
     if(FD_ISSET(sock, &set) == 0) {
-      perror("could not add sock to set!");
+      minet_perror("could not add sock to set!");
       minet_close(sock);
       exit(-1);
     }
 
     if (minet_select(sock + 1, &set, 0, 0, 0) < 0) { //&timeout
-    	perror("select");
+    	minet_perror("select");
     	exit(-1);
     }
 
@@ -111,7 +111,7 @@ int main(int argc, char * argv[]) {
     // Normal reply has return code 200
     
     if (minet_read(sock, buf, BUFSIZE) < 0) {
-	    perror("recv");
+	    minet_perror("recv");
 	    exit(-1);
     }
     sscanf(buf, "%*s %d", &rc);
@@ -136,15 +136,7 @@ int main(int argc, char * argv[]) {
 	      buf[datalen] = '\0';
 	    fprintf(wheretoprint, "%s", buf);
 	  }
-    /*
-    else if (rc == 404) {
-      fprintf(wheretoprint, "It 404-ed");
-      fprintf(wheretoprint, "%s", rsp); 
-    }
-    else {
-      perror("Return code was not 200 or 404.");
-    }
-    */
+    
 	  minet_close(sock);
     minet_deinit();
     //sock = NULL;
