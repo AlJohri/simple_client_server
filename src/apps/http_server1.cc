@@ -33,36 +33,60 @@ int main(int argc,char *argv[])
 
   /* initialize and make socket */
 
+  if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    perror("socket");
+    exit(-1);
+  }
+
   /* set server address*/
+  
+  sa.sin_family = AF_INET;
+  sa.sin_addr.s_addr = INADDR_ANY;
+  sa.sin_port = htons(server_port);
 
   /* bind listening socket */
 
+  if (bind(sock, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
+    perror("bind");
+    exit(-1);
+  }
+
   /* start listening */
+
+  if (listen(sock, 10) < 0) {
+    perror("listen");
+    exit(-1);
+  }
+
+  socklen_t len = sizeof(sa2);
 
   /* connection handling loop */
   while(1)
   {
     /* handle connections */
-    rc = handle_connection(sock2);
+    if ((sock2 = accept(sock, (struct sockaddr *) &sa2, &len)) < 0) {
+      perror("accept");
+      exit(-1);
+    }
+    if ((rc = handle_connection(sock2)) < 0) {
+      perror("hc");
+      exit(-1);
+    }
   }
 }
 
 int handle_connection(int sock2)
 {
   char filename[FILENAMESIZE+1];
-  int rc;
-  int fd;
   struct stat filestat;
   char buf[BUFSIZE+1];
   char *headers;
-  char *endheaders;
-  char *bptr;
   int datalen=0;
-  char *ok_response_f = "HTTP/1.0 200 OK\r\n"\
+  char *ok_response_f = (char*) "HTTP/1.0 200 OK\r\n"\
                       "Content-type: text/plain\r\n"\
                       "Content-length: %d \r\n\r\n";
   char ok_response[100];
-  char *notok_response = "HTTP/1.0 404 FILE NOT FOUND\r\n"\
+  char *notok_response = (char*) "HTTP/1.0 404 FILE NOT FOUND\r\n"\
                          "Content-type: text/html\r\n\r\n"\
                          "<html><body bgColor=black text=white>\n"\
                          "<h2>404 FILE NOT FOUND</h2>\n"
@@ -70,29 +94,72 @@ int handle_connection(int sock2)
   bool ok=true;
 
   /* first read loop -- get request and headers*/
+  
+  memset(buf, 0, sizeof(buf));
+
+  if (recv(sock2, buf, BUFSIZE, 0) < 0) {
+    perror("recv");
+    return -1;
+  }
+  
+  char *rsp = buf + 2;
+
+  while (!(rsp[0] == '\n' && rsp[-2] == '\n')) {
+    if (rsp == buf + strlen(buf)) {
+      if (recv(sock2, rsp, sizeof(buf) - strlen(buf), 0) < 0) {
+        perror("recv");
+	return -1;
+      }
+    }
+    rsp++;
+  }
 
   /* parse request to get file name */
   /* Assumption: this is a GET request and filename contains no spaces*/
+  
+  sscanf(buf, "%*s %s", (char*) &buf);
 
     /* try opening the file */
+
+  memset(filename, 0, FILENAMESIZE + 1);
+
+  getcwd(filename, FILENAMESIZE);
+  filename[strlen(filename)] = '/';
+  strncpy(filename + strlen(filename), buf, strlen(buf));
+
+  ok = (!stat(filename, &filestat));
 
   /* send response */
   if (ok)
   {
     /* send headers */
-
+    sprintf(ok_response, ok_response_f, filestat.st_size);
+    FILE* pFile = fopen(filename, "r");
+    memset(buf, 0, BUFSIZE);
+    fread(buf, sizeof(char), BUFSIZE, pFile);
+    datalen = strlen(buf) + strlen(ok_response) + 1;
+    headers = (char*) malloc(datalen);
+    strncpy(headers, ok_response, strlen(ok_response));
+    strncpy(headers + strlen(ok_response), buf, strlen(buf));
+    while (send(sock2, headers, datalen, 0) > 0)
+	datalen = fread(headers, sizeof(char), datalen, pFile);
+    fclose(pFile);
+    free(headers);
     /* send file */
   }
   else // send error response
   {
+    if (send(sock2, notok_response, strlen(notok_response), 0) < 0) {
+      perror("send");
+      return -1;
+    }
   }
 
   /* close socket and free space */
+  
+  close(sock2);
 
-  if (ok)
-    return 0;
-  else
-    return -1;
+  return 0;
 }
 
 int readnbytes(int fd,char *buf,int size)
