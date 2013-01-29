@@ -123,8 +123,10 @@ app.o: src/apps/app.cc src/libminet/minet_socket.h src/libminet/Minet.h \
  src/libminet/sock_mod_structs.h src/libminet/constate.h \
  src/libminet/Monitor.h
 http_client.o: src/apps/http_client.cc src/libminet/minet_socket.h
-http_server1.o: src/apps/http_server1.cc src/libminet/minet_socket.h
-http_server2.o: src/apps/http_server2.cc src/libminet/minet_socket.h
+http_server1.o: src/apps/http_server1.cc src/libminet/minet_socket.h \
+ src/apps/minet_wrapper.h
+http_server2.o: src/apps/http_server2.cc src/libminet/minet_socket.h \
+ src/apps/minet_wrapper.h
 http_server3.o: src/apps/http_server3.cc src/libminet/minet_socket.h
 icmp_app.o: src/apps/icmp_app.cc src/libminet/minet_socket.h
 tcp_client.o: src/apps/tcp_client.cc src/libminet/minet_socket.h
