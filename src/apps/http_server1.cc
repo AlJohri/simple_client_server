@@ -6,6 +6,7 @@
 
 #define BUFSIZE 1024
 #define FILENAMESIZE 100
+#define BACKLOG 10
 
 int handle_connection(int);
 int writenbytes(int,char *,int);
@@ -33,8 +34,19 @@ int main(int argc,char *argv[])
 
   /* initialize and make socket */
 
-  if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    perror("socket");
+  if (*argv[1] == 'k') {
+    minet_init(MINET_KERNEL);
+  }
+  else if (*argv[1] == 'u') {
+    minet_init(MINET_USER);
+  }
+  else {
+    minet_perror("Use k or u for first argument.\n");
+    exit(-1);
+  }
+
+  if ((sock = minet_socket(SOCK_STREAM)) < 0) {
+    minet_perror("socket");
     exit(-1);
   }
 
@@ -46,30 +58,28 @@ int main(int argc,char *argv[])
 
   /* bind listening socket */
 
-  if (bind(sock, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
-    perror("bind");
+  if (minet_bind(sock, &sa) < 0) {
+    minet_perror("bind");
     exit(-1);
   }
 
   /* start listening */
 
-  if (listen(sock, 10) < 0) {
-    perror("listen");
+  if (minet_listen(sock, BACKLOG) < 0) {
+    minet_perror("listen");
     exit(-1);
   }
-
-  socklen_t len = sizeof(sa2);
 
   /* connection handling loop */
   while(1)
   {
     /* handle connections */
-    if ((sock2 = accept(sock, (struct sockaddr *) &sa2, &len)) < 0) {
-      perror("accept");
+    if ((sock2 = minet_accept(sock, &sa2)) < 0) {
+      minet_perror("accept");
       exit(-1);
     }
     if ((rc = handle_connection(sock2)) < 0) {
-      perror("hc");
+      minet_perror("hc");
       exit(-1);
     }
   }
@@ -97,7 +107,7 @@ int handle_connection(int sock2)
   
   memset(buf, 0, sizeof(buf));
 
-  if (recv(sock2, buf, BUFSIZE, 0) < 0) {
+  if (minet_read(sock2, buf, BUFSIZE) < 0) {
     perror("recv");
     return -1;
   }
@@ -106,7 +116,7 @@ int handle_connection(int sock2)
 
   while (!(rsp[0] == '\n' && rsp[-2] == '\n')) {
     if (rsp == buf + strlen(buf)) {
-      if (recv(sock2, rsp, sizeof(buf) - strlen(buf), 0) < 0) {
+      if (minet_read(sock2, rsp, sizeof(buf) - strlen(buf)) < 0) {
         perror("recv");
 	return -1;
       }
@@ -142,7 +152,7 @@ int handle_connection(int sock2)
     strncpy(headers, ok_response, strlen(ok_response));
     strncpy(headers + strlen(ok_response), buf, strlen(buf));
     while (send(sock2, headers, datalen, 0) > 0)
-	datalen = fread(headers, sizeof(char), datalen, pFile);
+	    datalen = fread(headers, sizeof(char), datalen, pFile);
     fclose(pFile);
     free(headers);
     /* send file */
@@ -157,7 +167,7 @@ int handle_connection(int sock2)
 
   /* close socket and free space */
   
-  close(sock2);
+  minet_close(sock2);
 
   return 0;
 }
@@ -189,4 +199,3 @@ int writenbytes(int fd,char *str,int size)
   else
     return totalwritten;
 }
-

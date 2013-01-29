@@ -7,6 +7,7 @@
 #define BUFSIZE 1024
 #define FILENAMESIZE 100
 #define MAXCONNECTIONS 100
+#define BACKLOG 10
 
 int handle_connection(int);
 int writenbytes(int,char *,int);
@@ -21,7 +22,6 @@ int main(int argc,char *argv[])
   fd_set readlist;
   fd_set connections;
   int maxfd;
-  
 
   /* parse command line args */
   if (argc != 3)
@@ -38,8 +38,19 @@ int main(int argc,char *argv[])
 
   /* initialize and make socket */
 
-  if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    perror("socket");
+  if (*argv[1] == 'k') {
+    minet_init(MINET_KERNEL);
+  }
+  else if (*argv[1] == 'u') {
+    minet_init(MINET_USER);
+  }
+  else {
+    minet_perror("Use k or u for first argument.\n");
+    exit(-1);
+  }
+
+  if ((sock = minet_socket(SOCK_STREAM)) < 0) {
+    minet_perror("socket");
     exit(-1);
   }
   maxfd = sock;
@@ -52,19 +63,19 @@ int main(int argc,char *argv[])
 
   /* bind listening socket */
 
-  if (bind(sock, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
-    perror("bind");
+  if (minet_bind(sock, &sa) < 0) {
+    minet_perror("bind");
     exit(-1);
   }
  
   /* start listening */
 
-  if (listen(sock, 10) < 0) {
-    perror("listen");
+  if (minet_listen(sock, BACKLOG) < 0) {
+    minet_perror("listen");
     exit(-1);
   }
 
-  socklen_t len = sizeof(sa2);
+  //socklen_t len = sizeof(sa2);
   
   FD_ZERO(&connections);
   FD_ZERO(&readlist);
@@ -80,34 +91,33 @@ int main(int argc,char *argv[])
 
     /* do a select */
 
-    if ((rc = select(maxfd + 1, &readlist, NULL, NULL, NULL)) < 0) {
-      perror("select");
+    if ((rc = minet_select(maxfd + 1, &readlist, 0, 0, 0)) < 0) {
+      minet_perror("select");
       exit(-1);
     }
     /* process sockets that are ready */
 
     if (rc > 0) {
       for (i = 0; i <= maxfd; i++) {
-	
-	if (FD_ISSET(i, &readlist)) {
-      /* for the accept socket, add accepted connection to connections */
+	      if (FD_ISSET(i, &readlist)) {
+          /* for the accept socket, add accepted connection to connections */
           if (i == sock)
           {
-	    if ((rc = accept(sock, (struct sockaddr *) &sa2, &len)) < 0) {
-	      perror("accept");
-	      exit(-1);
-	    }
-	    FD_SET(rc, &connections);
-	    if (rc > maxfd)
-	      maxfd = rc;
+	          if ((rc = minet_accept(sock, &sa2)) < 0) {
+	            minet_perror("accept");
+	            continue; //exit(-1);
+	          }
+	          FD_SET(rc, &connections);
+	          if (rc > maxfd)
+	            maxfd = rc;
           }
           else /* for a connection socket, handle the connection */
           {
-	    if ((rc = handle_connection(i)) < 0) {
-	      perror("hc");
-	      exit(-1);
-	    }
-	    FD_CLR(i, &connections);
+	          if ((rc = handle_connection(i)) < 0) {
+	            minet_perror("hc");
+	            exit(-1);
+	          }
+	          FD_CLR(i, &connections);
           }
         }
       }
@@ -138,8 +148,8 @@ int handle_connection(int sock2)
 
   memset(buf, 0, sizeof(buf));
 
-  if (recv(sock2, buf, sizeof(buf), 0) < 0) {
-    perror("recv");
+  if (minet_read(sock2, buf, sizeof(buf)) < 0) {
+    minet_perror("recv");
     return -1;
   }
   
@@ -147,9 +157,9 @@ int handle_connection(int sock2)
 
   while (!(rsp[0] == '\n' && rsp[-2] == '\n')) {
     if (rsp == buf + strlen(buf)) {
-      if (recv(sock2, rsp, sizeof(buf) - strlen(buf), 0) < 0) {
-	perror("recv");
-	return -1;
+      if (minet_read(sock2, rsp, sizeof(buf) - strlen(buf)) < 0) {
+	      minet_perror("recv");
+	      return -1;
       }
     }
     rsp++;
@@ -191,7 +201,7 @@ int handle_connection(int sock2)
   else	// send error response
   {
     if (send(sock2, notok_response, strlen(notok_response), 0) < 0) {
-      perror("send");
+      minet_perror("send");
       return -1;
     }
   }
